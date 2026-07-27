@@ -1,0 +1,4 @@
+node_modules
+# generated reference pages — written by server/generate.js at every farm start
+pages/farm-api
+pages/*-api
