@@ -39,6 +39,8 @@ const isPrivateSite = origin => {
  */
 const publicWritesAllowed = () => /^(1|yes|true|on)$/i.test(process.env.FARM_API_PUBLIC_WRITES || '')
 
+const keys = require('./keys.js')
+
 /**
  * Why this write may not happen — or null if it may.
  *
@@ -47,14 +49,22 @@ const publicWritesAllowed = () => /^(1|yes|true|on)$/i.test(process.env.FARM_API
  * than inventing a second notion of rights means an operation mounted here can
  * never be a way around the wiki's own answer.
  */
-const refuseWrite = ({ app, req, origin }) => {
+const refuseWrite = ({ app, req, origin, status, scope }) => {
+  // A key held for this site answers both questions at once, and deliberately.
+  // The place-check exists because a plugin should not be able to expose its own
+  // writes publicly — but a key is not self-served: it is a secret the site
+  // owner wrote by hand into a directory the web cannot read. That is the
+  // out-loud authorisation the first refusal is asking for, stated per caller
+  // rather than per farm. A site with no key file is unaffected.
+  if (keys.authorize({ status, req, scope })) return null
+
   if (!isPrivateSite(origin) && !publicWritesAllowed()) {
     return {
       status: 403,
       error:
         `${origin} is not a private site, and this farm has not been asked to allow writes to public ones. ` +
         'Set FARM_API_PUBLIC_WRITES to turn that on, knowing that it opens page changes to anyone this farm ' +
-        'considers authorised.',
+        'considers authorised — or give the caller an API key in this site\'s status/api-keys.json.',
     }
   }
 
@@ -67,7 +77,9 @@ const refuseWrite = ({ app, req, origin }) => {
   if (!security.isAuthorized(req)) {
     return {
       status: 403,
-      error: `changing a page on ${origin} needs the rights to edit it — sign in to this wiki as its owner first`,
+      error:
+        `changing a page on ${origin} needs the rights to edit it — sign in to this wiki as its owner, ` +
+        'or present an X-Api-Key listed in its status/api-keys.json',
     }
   }
   return null
@@ -79,11 +91,17 @@ const refuseWrite = ({ app, req, origin }) => {
  * Published so that a reader is told the rule before being refused by it, and
  * so an agent can see that a tool it is not offered exists and why.
  */
-const describeGate = origin => ({
+const describeGate = (origin, status) => ({
   rights: 'may edit this site, by the wiki\'s own test',
+  apiKey:
+    status === undefined
+      ? 'an X-Api-Key listed in the site\'s status/api-keys.json is accepted where one is configured'
+      : keys.offered(status)
+        ? 'accepted — an X-Api-Key listed in this site\'s status/api-keys.json may write without signing in'
+        : 'not offered here — this site has no status/api-keys.json',
   publicSites: publicWritesAllowed() ? 'allowed — FARM_API_PUBLIC_WRITES is set' : 'refused unless FARM_API_PUBLIC_WRITES is set',
   here: origin ? (isPrivateSite(origin) ? 'private' : 'public') : undefined,
   offeredToAgents: false,
 })
 
-module.exports = { isPrivateSite, publicWritesAllowed, refuseWrite, describeGate }
+module.exports = { isPrivateSite, publicWritesAllowed, refuseWrite, describeGate, keys }

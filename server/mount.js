@@ -248,7 +248,13 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
           // why every door — this route, the try form, the agent door — asks
           // separately rather than trusting one central check it cannot see.
           if (writes) {
-            const refusal = refuseWrite({ app, req, origin: context.origin })
+            const refusal = refuseWrite({
+              app,
+              req,
+              origin: context.origin,
+              status: context.status,
+              scope: `${declaration.name}.${operationId}`,
+            })
             if (refusal) {
               return res
                 .status(refusal.status)

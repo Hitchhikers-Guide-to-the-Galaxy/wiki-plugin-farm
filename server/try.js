@@ -37,7 +37,7 @@ const operationsOf = document => {
  * makes and the call an agent makes — the same closure, not a third path
  * through the same idea.
  */
-const tryOperation = async ({ document, registry, params = {}, origin, site, app, req, renders }) => {
+const tryOperation = async ({ document, registry, params = {}, origin, site, status, app, req, renders }) => {
   const wanted = String(params.operation || '').trim()
   const operations = operationsOf(document)
 
@@ -84,7 +84,7 @@ const tryOperation = async ({ document, registry, params = {}, origin, site, app
   // because a refusal the reader never sees is the same to them as a button
   // that does nothing.
   if (entry.writes) {
-    const refusal = refuseWrite({ app, req, origin: site })
+    const refusal = refuseWrite({ app, req, origin: site, status, scope: `${shortName}.${entry.operationId}` })
     if (refusal) {
       return renders.renderProblem({
         title: 'Not allowed to change that',

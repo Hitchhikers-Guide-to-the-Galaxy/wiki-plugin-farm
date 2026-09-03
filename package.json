@@ -1,6 +1,6 @@
 {
   "name": "wiki-plugin-farm",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Federated Wiki - Farm Plugin \u2014 one server component for the whole farm: discovers what sibling plugins declare as an interface and mounts it, so a plugin can offer an API without growing a server of its own",
   "type": "module",
   "files": [
@@ -28,7 +28,7 @@
   "homepage": "https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-farm#readme",
   "scripts": {
     "generate": "node server/generate.js",
-    "test": "node test/contract.cjs",
+    "test": "node test/contract.cjs && node test/keys.cjs",
     "test:live": "node test/agrees.cjs"
   }
 }

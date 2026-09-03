@@ -174,6 +174,7 @@ const startServer = ({ argv, app, packageJson }) => {
       params: req.body || {},
       origin: `${req.protocol}://${req.get('host')}`,
       site: context.origin,
+      status: context.status,
       app,
       req,
       renders,
