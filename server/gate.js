@@ -28,8 +28,22 @@
 const isPrivateSite = origin => {
   const host = String(origin || '').split(':')[0].toLowerCase()
   if (!host) return false
-  return host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true
+  return privateSuffixes().some(suffix => host === suffix || host.endsWith(`.${suffix}`))
 }
+
+/**
+ * Further private names, told to this farm by the person running it — for a
+ * farm whose boundary is enforced somewhere this plugin cannot see, such as a
+ * reverse proxy that answers only the tailnet. `FARM_API_PRIVATE_SUFFIXES` is a
+ * comma list (`.private.fish,lan`); a leading dot is optional. Like the public
+ * switch below, it is the operator's to set and never a plugin's.
+ */
+const privateSuffixes = () =>
+  String(process.env.FARM_API_PRIVATE_SUFFIXES || '')
+    .split(',')
+    .map(s => s.trim().toLowerCase().replace(/^\.+/, ''))
+    .filter(Boolean)
 
 /**
  * Whether this farm has been told, out loud, that writes to public sites are
@@ -37,7 +51,23 @@ const isPrivateSite = origin => {
  * anything a plugin declares — a plugin asking for its own writes to be exposed
  * publicly is exactly the request that should not be self-served.
  */
-const publicWritesAllowed = () => /^(1|yes|true|on)$/i.test(process.env.FARM_API_PUBLIC_WRITES || '')
+//
+// Either a switch (`1`, `yes`, `true`, `on`) that opens every write, or a comma
+// list of scopes — `<plugin>.<operationId>`, the same names the api-key door
+// uses — that opens only those. The list is what lets a public farm take audio
+// from its site owners without also opening every page-changing operation.
+const publicWritesSetting = () => String(process.env.FARM_API_PUBLIC_WRITES || '').trim()
+const publicWritesAllowed = scope => {
+  const setting = publicWritesSetting()
+  if (/^(1|yes|true|on)$/i.test(setting)) return true
+  if (!scope || !setting) return false
+  return setting.split(',').map(s => s.trim()).includes(scope)
+}
+const publicWriteScopes = () => {
+  const setting = publicWritesSetting()
+  if (!setting || /^(1|yes|true|on|0|no|false|off)$/i.test(setting)) return []
+  return setting.split(',').map(s => s.trim()).filter(Boolean)
+}
 
 const keys = require('./keys.js')
 
@@ -58,12 +88,12 @@ const refuseWrite = ({ app, req, origin, status, scope }) => {
   // rather than per farm. A site with no key file is unaffected.
   if (keys.authorize({ status, req, scope })) return null
 
-  if (!isPrivateSite(origin) && !publicWritesAllowed()) {
+  if (!isPrivateSite(origin) && !publicWritesAllowed(scope)) {
     return {
       status: 403,
       error:
         `${origin} is not a private site, and this farm has not been asked to allow writes to public ones. ` +
-        'Set FARM_API_PUBLIC_WRITES to turn that on, knowing that it opens page changes to anyone this farm ' +
+        `Set FARM_API_PUBLIC_WRITES to turn that on (or list ${scope || 'the operation'} in it), knowing that it opens page changes to anyone this farm ` +
         'considers authorised — or give the caller an API key in this site\'s status/api-keys.json.',
     }
   }
@@ -99,9 +129,13 @@ const describeGate = (origin, status) => ({
       : keys.offered(status)
         ? 'accepted — an X-Api-Key listed in this site\'s status/api-keys.json may write without signing in'
         : 'not offered here — this site has no status/api-keys.json',
-  publicSites: publicWritesAllowed() ? 'allowed — FARM_API_PUBLIC_WRITES is set' : 'refused unless FARM_API_PUBLIC_WRITES is set',
+  publicSites: publicWritesAllowed()
+    ? 'allowed — FARM_API_PUBLIC_WRITES is set'
+    : publicWriteScopes().length
+      ? `allowed only for ${publicWriteScopes().join(', ')} — FARM_API_PUBLIC_WRITES lists them`
+      : 'refused unless FARM_API_PUBLIC_WRITES is set',
   here: origin ? (isPrivateSite(origin) ? 'private' : 'public') : undefined,
   offeredToAgents: false,
 })
 
-module.exports = { isPrivateSite, publicWritesAllowed, refuseWrite, describeGate, keys }
+module.exports = { isPrivateSite, privateSuffixes, publicWritesAllowed, publicWriteScopes, refuseWrite, describeGate, keys }

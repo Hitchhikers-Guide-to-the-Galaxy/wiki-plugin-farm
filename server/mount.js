@@ -5,7 +5,10 @@
 // that knows about a request or a response lives here, in one place, once —
 // rather than being copied into every plugin that wants an interface.
 
+const fs = require('node:fs')
+const os = require('node:os')
 const path = require('node:path')
+const crypto = require('node:crypto')
 const { pathToFileURL } = require('node:url')
 
 const { unmetContext } = require('./context.js')
@@ -76,10 +79,81 @@ const coerce = (raw, schema = {}) => {
  * Missing parameters carrying a default are filled from the spec, so a handler
  * and a reader of the document agree about what happens when you leave one out.
  */
+/**
+ * A JSON request body's fields, read as parameters. The wiki has already parsed
+ * the body by the time a route sees it, so a field arrives as a value much like
+ * a query parameter does — and treating it as one means a body argument is
+ * defaulted, coerced and required by exactly the rules a query argument is,
+ * rather than by a second set kept level by hand. Bodies exist for what does
+ * not fit in a URL: a transcript, a page of text.
+ */
+const bodyParameters = operation => {
+  const schema = operation.requestBody?.content?.['application/json']?.schema
+  if (!schema || !schema.properties) return []
+  const required = new Set(schema.required || [])
+  return Object.entries(schema.properties).map(([name, s]) => ({ name, in: 'body', schema: s, required: required.has(name) }))
+}
+
+/** Query and body parameters together — everything a caller may supply. */
+const suppliedParameters = operation => [
+  ...(operation.parameters || []).filter(p => p.in === 'query'),
+  ...bodyParameters(operation),
+]
+
+/**
+ * Whether the operation takes a file as its body. Such a body is never parsed:
+ * it is streamed to a temporary file and the handler is told where, so a
+ * recording of an hour costs disk rather than memory.
+ */
+const takesBinaryBody = operation =>
+  Object.keys(operation.requestBody?.content || {}).some(t => t === 'application/octet-stream' || /\/\*$/.test(t))
+
+/** Largest body accepted: the operator's setting, else the operation's own, else 500 MB. */
+const bodyLimit = operation =>
+  Number(process.env.FARM_API_MAX_BODY_BYTES) || Number(operation['x-fedwiki-max-bytes']) || 500 * 1024 * 1024
+
+/**
+ * Stream a request body into `dir`, refusing it the moment it passes `limit`.
+ * The directory must lie outside anything the wiki serves: a half-received file
+ * in the assets tree would be downloadable by anyone while it arrived.
+ */
+const receiveBody = (req, dir, limit) =>
+  new Promise((resolve, reject) => {
+    const tooLarge = () => Object.assign(new Error(`the body is larger than this farm accepts (${limit} bytes)`), { status: 413 })
+    if (Number(req.get('content-length')) > limit) return reject(tooLarge())
+    fs.mkdirSync(dir, { recursive: true })
+    const tmpPath = path.join(dir, `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.part`)
+    const out = fs.createWriteStream(tmpPath, { flags: 'wx' })
+    const hash = crypto.createHash('sha256')
+    let size = 0
+    let failed = false
+    const fail = e => {
+      if (failed) return
+      failed = true
+      req.unpipe(out)
+      out.destroy()
+      fs.rm(tmpPath, { force: true }, () => {})
+      req.resume() // drain, so the client hears the refusal rather than a reset
+      reject(e)
+    }
+    req.on('data', chunk => {
+      size += chunk.length
+      hash.update(chunk)
+      if (size > limit) fail(tooLarge())
+    })
+    req.on('error', fail)
+    req.on('aborted', () => fail(Object.assign(new Error('the upload was abandoned'), { status: 400 })))
+    out.on('error', fail)
+    out.on('finish', () => {
+      if (failed) return
+      resolve({ tmpPath, size, sha256: hash.digest('hex'), type: req.get('content-type') || 'application/octet-stream' })
+    })
+    req.pipe(out)
+  })
+
 const argumentsFor = (operation, query, context = {}) => {
   const args = {}
-  for (const p of operation.parameters || []) {
-    if (p.in !== 'query') continue
+  for (const p of suppliedParameters(operation)) {
     const value = coerce(query[p.name], p.schema)
     if (value !== undefined) args[p.name] = value
     else if (p.schema && p.schema.default !== undefined) args[p.name] = p.schema.default
@@ -95,8 +169,8 @@ const argumentsFor = (operation, query, context = {}) => {
 }
 
 const missingRequired = (operation, args) =>
-  (operation.parameters || [])
-    .filter(p => p.in === 'query' && p.required)
+  suppliedParameters(operation)
+    .filter(p => p.required)
     .filter(p => args[p.name] === undefined || args[p.name] === '')
     .map(p => p.name)
 
@@ -227,8 +301,18 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
       // response. The route below is a thin wrapper over it, and so is the tool
       // an agent calls — which is what makes "does the tool agree with the URL"
       // true by construction rather than by keeping two code paths level.
-      const call = async (values = {}) => {
-        const args = argumentsFor(operation, values, context)
+      //
+      // `trusted` carries what only the route can know — the file a binary body
+      // was streamed into. It is kept apart from `values` because values come
+      // from callers, and a caller must never be able to name a path of its own.
+      const binary = takesBinaryBody(operation)
+      const call = async (values = {}, trusted = {}) => {
+        if (binary && !trusted.body) {
+          const e = new Error('this operation takes a file as its request body, so it can only be called over HTTP')
+          e.status = 400
+          throw e
+        }
+        const args = { ...argumentsFor(operation, values, context), ...(binary ? { body: trusted.body } : {}) }
         const missing = missingRequired(operation, args)
         if (missing.length) {
           const e = new Error(
@@ -261,7 +345,17 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
                 .json({ error: refusal.error, plugin: declaration.name, operation: operationId })
             }
           }
-          res.json(await call(req.query))
+          const values = bodyParameters(operation).length && req.body && typeof req.body === 'object'
+            ? { ...req.query, ...req.body }
+            : req.query
+          if (!binary) return res.json(await call(values))
+          const tmpDir = context.status ? path.join(context.status, 'farm-tmp') : path.join(os.tmpdir(), 'farm-tmp')
+          const body = await receiveBody(req, tmpDir, bodyLimit(operation))
+          try {
+            res.json(await call(values, { body }))
+          } finally {
+            fs.rm(body.tmpPath, { force: true }, () => {}) // a handler that kept the file has already moved it
+          }
         } catch (e) {
           res.status(e.status || 500).json({
             error: e.message,
@@ -283,4 +377,4 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
   }
 }
 
-module.exports = { mountDeclaration, argumentsFor, missingRequired, coerce, EXTENSION }
+module.exports = { mountDeclaration, argumentsFor, missingRequired, coerce, bodyParameters, takesBinaryBody, receiveBody, EXTENSION }

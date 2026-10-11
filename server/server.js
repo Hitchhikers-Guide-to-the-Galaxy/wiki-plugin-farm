@@ -15,7 +15,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
-const { discover, PREFIX } = require('./discover.js')
+const { discover, readDeclaration, PREFIX } = require('./discover.js')
 const { mountDeclaration } = require('./mount.js')
 const { mergeDocument } = require('./merge.js')
 const { writePages } = require('./pages.js')
@@ -53,6 +53,18 @@ const startServer = ({ argv, app, packageJson }) => {
   // plugin but not in the plugins this plugin loads, so one bad declaration has
   // to cost one interface rather than every interface on the farm.
   const { found, failed } = discover({ packageDir: argv.packageDir, packageJson })
+
+  // The farm's own operations (assets), declared the same way a sibling's are
+  // and mounted by the same code, so they are gated, documented and offered to
+  // agents with no special case. Read from where this file actually lives, which
+  // under a development symlink is not beneath argv.packageDir.
+  const ownDir = path.resolve(__dirname, '..')
+  try {
+    const own = readDeclaration(path.dirname(ownDir), path.basename(ownDir))
+    if (own) found.unshift(own)
+  } catch (e) {
+    failed.push({ plugin: 'wiki-plugin-farm', error: `its own operations — ${e.message}` })
+  }
 
   // Where this server is: the site an operation may declare it needs to know.
   // Built once per site, because the farm runs one of these per domain.

@@ -1,0 +1,48 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Farm",
+    "version": "0.9.0",
+    "description": "The farm's own operations. Putting a file beside a page is something many plugins need — a recorder, a drawing, an import — so the farm offers one documented, gated way to do it, with the hardened rules of the anarchive fork of the Assets plugin: the body is streamed outside the served tree, folder and file names are checked, executable types are kept to the reserved `home` folder, an existing file is never silently replaced, and success is reported only once the file is in place. The Assets plugin's own `/plugin/assets/*` routes are left as they are."
+  },
+  "paths": {
+    "/assets/upload.json": {
+      "post": {
+        "operationId": "assetsUpload",
+        "summary": "Put a file into this site's assets",
+        "description": "The request body is the file itself, sent as-is (not a form) with its own Content-Type. It is stored as `assets/<folder>/<name>`. One file per request.",
+        "x-fedwiki-writes": true,
+        "x-fedwiki-context": ["origin", "status"],
+        "x-fedwiki-max-bytes": 524288000,
+        "parameters": [
+          { "name": "folder", "in": "query", "required": true, "description": "Folder beneath assets — usually the slug of the page the file belongs to.", "schema": { "type": "string" } },
+          { "name": "name", "in": "query", "required": true, "description": "The file name to store it under.", "schema": { "type": "string" } },
+          { "name": "replace", "in": "query", "required": false, "description": "Overwrite a file of the same name. Without it an existing name is refused with 409.", "schema": { "type": "boolean", "default": false } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/octet-stream": { "schema": { "type": "string", "format": "binary" } } }
+        },
+        "responses": {
+          "200": { "description": "Stored. `src` is site-relative; prefix the site's origin for a link that survives forking." },
+          "400": { "description": "Unacceptable folder or name, or no body." },
+          "403": { "description": "Not allowed to change this site." },
+          "409": { "description": "A file of that name already exists." },
+          "413": { "description": "Larger than this farm accepts." }
+        }
+      }
+    },
+    "/assets/list.json": {
+      "get": {
+        "operationId": "assetsList",
+        "summary": "List the files in one assets folder",
+        "x-fedwiki-read-only": true,
+        "x-fedwiki-context": ["origin", "status"],
+        "parameters": [
+          { "name": "folder", "in": "query", "required": true, "description": "Folder beneath assets.", "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "The folder's files with size and modification time." } }
+      }
+    }
+  }
+}
