@@ -12,7 +12,7 @@ const crypto = require('node:crypto')
 const { pathToFileURL } = require('node:url')
 
 const { unmetContext } = require('./context.js')
-const { refuseWrite } = require('./gate.js')
+const { refuseWrite, crossOriginAllowed, allowOrigin } = require('./gate.js')
 const { loadVocabulary, checkVocabulary, bindCommands } = require('./vocabulary.js')
 
 /**
@@ -280,6 +280,10 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
       // an answer.
       const readOnly = operation['x-fedwiki-read-only'] === true
       const writes = operation['x-fedwiki-writes'] === true
+      // How much the gate asks of a write — see gate.js — and whether a page
+      // from another origin may call this at all (never by default).
+      const gate = operation['x-fedwiki-gate'] === 'place' ? 'place' : 'rights'
+      const crossOrigin = operation['x-fedwiki-cross-origin'] === true
 
       if (readOnly && writes) {
         skipped.push({ where, why: 'declares itself both read-only and writing — one of the two is wrong' })
@@ -324,8 +328,20 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
         return handler(args)
       }
 
+      const scope = `${declaration.name}.${operationId}`
+      if (crossOrigin) {
+        // The preflight a browser sends before a cross-origin POST, and the
+        // headers on the answer itself. Refused silently (no headers, so the
+        // browser refuses) where the place does not allow it.
+        app.options(route, (req, res) => {
+          if (crossOriginAllowed(context.origin, scope)) allowOrigin(req, res, method)
+          res.sendStatus(204)
+        })
+      }
+
       app[method](route, async (req, res) => {
         try {
+          if (crossOrigin && crossOriginAllowed(context.origin, scope)) allowOrigin(req, res, method)
           // The gate lives at the entry point, not inside `call`, and it has to:
           // a handler is a plain function of its arguments and never sees who
           // asked. Only something holding the request can answer that, which is
@@ -337,7 +353,8 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
               req,
               origin: context.origin,
               status: context.status,
-              scope: `${declaration.name}.${operationId}`,
+              scope,
+              gate,
             })
             if (refusal) {
               return res
@@ -365,7 +382,7 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
         }
       })
 
-      mounted.push({ method, route, operationId, summary: operation.summary || '', call, writes })
+      mounted.push({ method, route, operationId, summary: operation.summary || '', call, writes, gate, crossOrigin })
     }
   }
 

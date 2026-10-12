@@ -134,7 +134,7 @@ const mergeDocument = ({ registry, refused = [], origin, version, farmRoot }) =>
       // Say which operations are gated, and how. A reader refused by a rule
       // they were never told about learns only that something is broken; the
       // rule itself belongs in the description, beside the operation it governs.
-      if (merged['x-fedwiki-writes'] === true) merged['x-fedwiki-gated'] = describeGate(origin)
+      if (merged['x-fedwiki-writes'] === true) merged['x-fedwiki-gated'] = describeGate(origin, undefined, merged['x-fedwiki-gate'])
       merged.tags = [name]
       merged.operationId = `${name}_${operationId}` // unique across the farm
       merged['x-fedwiki-plugin'] = declaration.plugin

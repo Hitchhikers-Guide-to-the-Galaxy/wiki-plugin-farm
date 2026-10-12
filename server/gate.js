@@ -26,7 +26,10 @@
  * refusal somebody can lift; being wrong in the other costs a public edit.
  */
 const isPrivateSite = origin => {
-  const host = String(origin || '').split(':')[0].toLowerCase()
+  // A bare host, a host:port, or a full origin with its scheme — the document
+  // route hands over the last of these, and splitting it on the first colon
+  // used to read the scheme as the host, so every site described as public.
+  const host = String(origin || '').replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').split('/')[0].split(':')[0].toLowerCase()
   if (!host) return false
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true
   return privateSuffixes().some(suffix => host === suffix || host.endsWith(`.${suffix}`))
@@ -79,7 +82,15 @@ const keys = require('./keys.js')
  * than inventing a second notion of rights means an operation mounted here can
  * never be a way around the wiki's own answer.
  */
-const refuseWrite = ({ app, req, origin, status, scope }) => {
+//
+// `gate` is how much the operation asks: 'rights' (the default) asks both
+// questions; 'place' asks only the first. An operation may declare 'place'
+// when it changes no page and keeps nothing — the Voice Tool's hear, which
+// transcribes a recording and deletes it — so that a private farm will do that
+// for any caller: in particular a browser on the laptop the farm runs on,
+// reading a page served from elsewhere. The place-check still stands, so a
+// public farm refuses it exactly as before.
+const refuseWrite = ({ app, req, origin, status, scope, gate = 'rights' }) => {
   // A key held for this site answers both questions at once, and deliberately.
   // The place-check exists because a plugin should not be able to expose its own
   // writes publicly — but a key is not self-served: it is a secret the site
@@ -97,6 +108,8 @@ const refuseWrite = ({ app, req, origin, status, scope }) => {
         'considers authorised — or give the caller an API key in this site\'s status/api-keys.json.',
     }
   }
+
+  if (gate === 'place') return null
 
   const security = app && app.securityhandler
   if (!security || typeof security.isAuthorized !== 'function') {
@@ -121,8 +134,9 @@ const refuseWrite = ({ app, req, origin, status, scope }) => {
  * Published so that a reader is told the rule before being refused by it, and
  * so an agent can see that a tool it is not offered exists and why.
  */
-const describeGate = (origin, status) => ({
-  rights: 'may edit this site, by the wiki\'s own test',
+const describeGate = (origin, status, gate = 'rights') => ({
+  asks: gate === 'place' ? 'the place only — any caller, where the site is private or public writes are allowed' : 'the place, then the caller',
+  rights: gate === 'place' ? 'not asked — this operation changes no page' : 'may edit this site, by the wiki\'s own test',
   apiKey:
     status === undefined
       ? 'an X-Api-Key listed in the site\'s status/api-keys.json is accepted where one is configured'
@@ -138,4 +152,25 @@ const describeGate = (origin, status) => ({
   offeredToAgents: false,
 })
 
-module.exports = { isPrivateSite, privateSuffixes, publicWritesAllowed, publicWriteScopes, refuseWrite, describeGate, keys }
+/**
+ * Whether an operation that declares x-fedwiki-cross-origin may be answered to
+ * a page from another origin: only where the site is private (or public writes
+ * are allowed for it), so a public farm's reads are not handed to every page a
+ * visitor opens. The headers echo the asking origin and never allow credentials
+ * — the place gate, not a cookie, is what lets the call through.
+ */
+const crossOriginAllowed = (origin, scope) => isPrivateSite(origin) || publicWritesAllowed(scope)
+const CORS_HEADERS = {
+  'Access-Control-Allow-Headers': 'Accept, Content-Type, X-Recording-Type, X-Api-Key',
+  'Access-Control-Max-Age': '600',
+}
+const allowOrigin = (req, res, method) => {
+  const asking = req.get && req.get('origin')
+  if (!asking) return
+  res.header('Access-Control-Allow-Origin', asking)
+  res.header('Vary', 'Origin')
+  res.header('Access-Control-Allow-Methods', `${String(method || 'get').toUpperCase()}, OPTIONS`)
+  for (const [k, v] of Object.entries(CORS_HEADERS)) res.header(k, v)
+}
+
+module.exports = { crossOriginAllowed, allowOrigin, isPrivateSite, privateSuffixes, publicWritesAllowed, publicWriteScopes, refuseWrite, describeGate, keys }
