@@ -109,7 +109,14 @@ const refuseWrite = ({ app, req, origin, status, scope, gate = 'rights' }) => {
     }
   }
 
-  if (gate === 'place') return null
+  // A place-gated operation skips the who-check only where the place itself is
+  // private. On a public site it is answered at all only because
+  // FARM_API_PUBLIC_WRITES listed it, and there the caller must still be someone
+  // the wiki lets edit the site — otherwise anyone on the internet could spend
+  // this farm's transcription (measured 2026-10-15: an anonymous post ran a
+  // whisper job on the public farm). The laptop door is a private site, so a
+  // page from elsewhere still gets heard there without a login.
+  if (gate === 'place' && isPrivateSite(origin)) return null
 
   const security = app && app.securityhandler
   if (!security || typeof security.isAuthorized !== 'function') {
@@ -135,8 +142,14 @@ const refuseWrite = ({ app, req, origin, status, scope, gate = 'rights' }) => {
  * so an agent can see that a tool it is not offered exists and why.
  */
 const describeGate = (origin, status, gate = 'rights') => ({
-  asks: gate === 'place' ? 'the place only — any caller, where the site is private or public writes are allowed' : 'the place, then the caller',
-  rights: gate === 'place' ? 'not asked — this operation changes no page' : 'may edit this site, by the wiki\'s own test',
+  asks:
+    gate === 'place'
+      ? 'the place only on a private site — any caller; on a public site that FARM_API_PUBLIC_WRITES allows, the caller too'
+      : 'the place, then the caller',
+  rights:
+    gate === 'place'
+      ? 'not asked on a private site — this operation changes no page; on a public site, may edit this site, by the wiki\'s own test'
+      : 'may edit this site, by the wiki\'s own test',
   apiKey:
     status === undefined
       ? 'an X-Api-Key listed in the site\'s status/api-keys.json is accepted where one is configured'

@@ -16,7 +16,12 @@ check('place gate on a private site asks nobody', refused('http://localhost:4242
 check('place gate on a .local name', refused('http://pi5.local', { gate: 'place' }) === null)
 check('place gate on a public site is refused on the place', /not a private site/.test(refused('https://fedwiki.club', { gate: 'place' })?.error || ''))
 process.env.FARM_API_PUBLIC_WRITES = 'audionote.hear'
-check('place gate on a public site listed in FARM_API_PUBLIC_WRITES passes', refused('https://fedwiki.club', { gate: 'place' }) === null)
+check('place gate on a public site listed in FARM_API_PUBLIC_WRITES still asks who (no security module → refused)', refused('https://fedwiki.club', { gate: 'place' })?.status === 403)
+const signedOut = { app: { securityhandler: { isAuthorized: () => false } } }
+const signedIn = { app: { securityhandler: { isAuthorized: () => true } } }
+check('place gate on a listed public site refuses a caller without rights', /needs the rights/.test(refused('https://fedwiki.club', { gate: 'place', ...signedOut })?.error || ''))
+check('place gate on a listed public site passes the site owner', refused('https://fedwiki.club', { gate: 'place', ...signedIn }) === null)
+check('place gate on a private site still asks nobody while public writes are listed', refused('http://localhost:4242', { gate: 'place', ...signedOut }) === null)
 check('rights gate on that site still asks who', refused('https://fedwiki.club')?.status === 403)
 delete process.env.FARM_API_PUBLIC_WRITES
 
@@ -37,6 +42,8 @@ check('no origin header, no CORS headers', Object.keys(none).length === 0)
 
 const d = gate.describeGate('http://localhost:4242', undefined, 'place')
 check('described as place-only', /place only/.test(d.asks) && /not asked/.test(d.rights))
+const dp = gate.describeGate('https://fedwiki.club', undefined, 'place')
+check('described as asking the caller too on a public site', /the caller too/.test(dp.asks) && /may edit/.test(dp.rights))
 
 if (problems.length) {
   console.error('gate: FAILED\n  ' + problems.join('\n  '))
