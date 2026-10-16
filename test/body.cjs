@@ -107,7 +107,6 @@ const main = async () => {
     ['dotted folder', 'folder=a.b&name=x.webm'],
     ['separator in name', 'folder=p&name=a%2Fb.webm'],
     ['hidden name', 'folder=p&name=.env'],
-    ['html outside home', 'folder=p&name=x.html'],
     ['no folder', 'name=x.webm'],
   ]) {
     r = await ask('POST', `${UP}?${q}`, { body: audio, type: 'audio/webm' })
@@ -118,6 +117,8 @@ const main = async () => {
   check('nothing escaped the site', !fs.existsSync(path.join(farmRoot, 'passwd')) && !fs.existsSync(path.join(site, 'status', 'x.webm')))
   r = await ask('POST', `${UP}?folder=home&name=index.html`, { body: Buffer.from('<p>hi</p>'), type: 'text/html' })
   check('html inside home — 200', r.status === 200)
+  r = await ask('POST', `${UP}?folder=my-page&name=deck.html`, { body: Buffer.from('<p>deck</p>'), type: 'text/html' })
+  check('html in a page folder — 200', r.status === 200 && fs.readFileSync(path.join(site, 'assets', 'my-page', 'deck.html'), 'utf8') === '<p>deck</p>')
 
   process.env.FARM_API_MAX_BODY_BYTES = '10'
   r = await ask('POST', `${UP}?folder=p&name=big.webm`, { body: Buffer.alloc(64), type: 'audio/webm' })

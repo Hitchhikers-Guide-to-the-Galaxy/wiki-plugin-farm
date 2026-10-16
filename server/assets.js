@@ -5,15 +5,14 @@
 // a file beside a page. The route the wiki ships for that belongs to the Assets
 // plugin, which this farm does not own and cannot fix; so the farm offers one of
 // its own, documented and gated like every other operation, and leaves that
-// plugin untouched in its seat. The rules below are the hardened ones from the
-// anarchive fork of the Assets plugin — copied, not depended on.
+// plugin untouched in its seat. The name rules below are the hardened ones from
+// the anarchive fork of the Assets plugin — copied, not depended on. File types
+// are not restricted: html in a page's folder is ordinary (a deck, a report),
+// and the stock Assets plugin has always accepted it there.
 
 const fs = require('node:fs')
 const path = require('node:path')
 
-/** Types a browser would run if served from the wiki's origin. Kept to the reserved folder. */
-const EXECUTABLE = new Set(['.html', '.htm', '.xhtml', '.js', '.mjs', '.cjs', '.wasm', '.svgz'])
-const RESERVED = 'home'
 const MAX_NAME = 200
 
 const problem = (status, message) => Object.assign(new Error(message), { status })
@@ -35,17 +34,13 @@ const checkFolder = folder => {
   return f
 }
 
-const checkName = (name, folder) => {
+const checkName = name => {
   const n = String(name ?? '')
   if (!n || n === '.' || n === '..') throw problem(400, 'name the file')
   if (n.includes('\0')) throw problem(400, 'the file name contains a null byte')
   if (/[/\\]/.test(n)) throw problem(400, `the file name contains a path separator: ${n}`)
   if (n.startsWith('.')) throw problem(400, `hidden files are not accepted: ${n}`)
   if (n.length > MAX_NAME) throw problem(400, `the file name is longer than ${MAX_NAME} characters`)
-  const ext = path.extname(n).toLowerCase()
-  if (EXECUTABLE.has(ext) && folder.split('/')[0] !== RESERVED) {
-    throw problem(400, `${ext} files are only accepted in the reserved '${RESERVED}' folder`)
-  }
   return n
 }
 
@@ -68,7 +63,7 @@ const move = (from, to) => {
  */
 const assetsUpload = ({ folder, name, replace, status, body }) => {
   const f = checkFolder(folder)
-  const n = checkName(name, f)
+  const n = checkName(name)
   const dir = path.join(assetsDir(status), f)
   const dest = path.join(dir, n)
   if (fs.existsSync(dest) && !replace) {

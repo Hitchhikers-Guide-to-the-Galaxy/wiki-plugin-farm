@@ -3,7 +3,7 @@
   "info": {
     "title": "Farm",
     "version": "0.9.0",
-    "description": "The farm's own operations. Putting a file beside a page is something many plugins need — a recorder, a drawing, an import — so the farm offers one documented, gated way to do it, with the hardened rules of the anarchive fork of the Assets plugin: the body is streamed outside the served tree, folder and file names are checked, executable types are kept to the reserved `home` folder, an existing file is never silently replaced, and success is reported only once the file is in place. The Assets plugin's own `/plugin/assets/*` routes are left as they are."
+    "description": "The farm's own operations. Putting a file beside a page is something many plugins need — a recorder, a drawing, an import — so the farm offers one documented, gated way to do it, with the hardened rules of the anarchive fork of the Assets plugin: the body is streamed outside the served tree, folder and file names are checked, an existing file is never silently replaced, and success is reported only once the file is in place. The Assets plugin's own `/plugin/assets/*` routes are left as they are."
   },
   "paths": {
     "/assets/upload.json": {
