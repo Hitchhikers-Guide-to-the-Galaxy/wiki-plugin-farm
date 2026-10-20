@@ -9,7 +9,7 @@
     {
       "type": "markdown",
       "id": "064fa3218a0243ff",
-      "text": "It has no item type. Nothing to drag onto a page, nothing to edit \u2014 it is a server component and an about page, and everything it does is visible only as routes that other plugins asked for."
+      "text": "It has no item type. Nothing to drag onto a page, nothing to edit — it is a server component and an about page, and everything it does is visible only as routes that other plugins asked for."
     },
     {
       "type": "markdown",
@@ -24,42 +24,42 @@
     {
       "type": "markdown",
       "id": "2f27a214fbdce673",
-      "text": "The handlers module exports ordinary functions taking and returning plain values. One never sees a request or a response, and imports nothing from the web framework \u2014 that is the line that keeps the server out of the plugin. This plugin does the adapting, once, for everyone.\n\nHandlers may be written as ES modules or as CommonJS. They are loaded by dynamic import, which reads both, so the choice is the plugin's own business."
+      "text": "The handlers module exports ordinary functions taking and returning plain values. One never sees a request or a response, and imports nothing from the web framework — that is the line that keeps the server out of the plugin. This plugin does the adapting, once, for everyone.\n\nHandlers may be written as ES modules or as CommonJS. They are loaded by dynamic import, which reads both, so the choice is the plugin's own business."
     },
     {
       "type": "markdown",
       "id": "804be693a7cd5a7c",
-      "text": "# Registration Pulls, It Never Pushes\n\nMost installed plugins ship no server file, so they are never executed server-side and could never call a register function \u2014 there would be nothing running to call it. So a declaration has to be a file that gets read, not a call that gets waited for.\n\nA useful side effect: load order stops mattering. Plugin servers start asynchronously in no guaranteed order, and anything push-based would race."
+      "text": "# Registration Pulls, It Never Pushes\n\nMost installed plugins ship no server file, so they are never executed server-side and could never call a register function — there would be nothing running to call it. So a declaration has to be a file that gets read, not a call that gets waited for.\n\nA useful side effect: load order stops mattering. Plugin servers start asynchronously in no guaranteed order, and anything push-based would race."
     },
     {
       "type": "markdown",
       "id": "f13b1a36083fc9e5",
-      "text": "# Routes Live Under A Prefix\n\nEverything mounted sits beneath `/system/api/{plugin}/`, and every path must end in an extension.\n\nThe page route matches **pairs** of path segments, so a path with an even number of them is answered as a page \u2014 and answered with HTTP 200 and the wiki's own HTML, which is the worst kind of failure because nothing about it looks like one. A path ending `.json` is invisible to that route, so an extensionless path is refused at mount time rather than mounted and shadowed.\n\nTwo names escape the page route entirely, `plugin` and `auth`, passed through at any depth. So the extension rule is not a law of the wiki \u2014 it is the price of mounting outside that exemption, which this plugin does on purpose. `/plugin/{name}/` belongs to a plugin's own server, and a plugin may declare an interface while keeping the server it already has. Mounting elsewhere keeps the two doors tellable apart, and keeps them from racing to claim the same address."
+      "text": "# Routes Live Under A Prefix\n\nEverything mounted sits beneath `/system/api/{plugin}/`, and every path must end in an extension.\n\nThe page route matches **pairs** of path segments, so a path with an even number of them is answered as a page — and answered with HTTP 200 and the wiki's own HTML, which is the worst kind of failure because nothing about it looks like one. A path ending `.json` is invisible to that route, so an extensionless path is refused at mount time rather than mounted and shadowed.\n\nTwo names escape the page route entirely, `plugin` and `auth`, passed through at any depth. So the extension rule is not a law of the wiki — it is the price of mounting outside that exemption, which this plugin does on purpose. `/plugin/{name}/` belongs to a plugin's own server, and a plugin may declare an interface while keeping the server it already has. Mounting elsewhere keeps the two doors tellable apart, and keeps them from racing to claim the same address."
     },
     {
       "type": "markdown",
       "id": "c73e0a95f1b48d26",
-      "text": "# Reading Is Offered, Writing Is Asked\n\nAn operation says which kind it is, and saying nothing is not a third kind \u2014 an unmarked operation mounts nowhere. Inferring it from the method would work almost always, and that is the objection: an author who never considered the question would have their silence read as an answer.\n\nA write is refused first on **where** and then on **who**. Public sites are refused unless the farm has been told out loud to allow them, by whoever runs the farm rather than by any plugin. Only then is the caller asked, and that question is handed to the wiki's own test for who may edit this site \u2014 so nothing mounted here can become a way around the wiki's own answer.\n\nThe gate sits at every door and has to: a handler is a plain function that never sees who asked, so only something holding the request can judge. The route refuses with a status, the form refuses with a page, and the agent door does not offer a write at all \u2014 a request arriving there carries no session, so the gate could only ever refuse it, and a tool that cannot succeed is worse than no tool."
+      "text": "# Reading Is Offered, Writing Is Asked\n\nAn operation says which kind it is, and saying nothing is not a third kind — an unmarked operation mounts nowhere. Inferring it from the method would work almost always, and that is the objection: an author who never considered the question would have their silence read as an answer.\n\nA write is asked **who**, and that question is handed to the wiki's own test for who may edit this site — so a signed-in owner may do through the farm what they may already do by hand, and nothing mounted here can become a way around the wiki's own answer. Since 0.10.0 a public site no longer refuses writes by default; the farm's owner decides the rest, once for the whole farm:\n\n- **Spending.** An operation that uses the farm's keys or machine (a model, a transcription, an index build) declares `x-fedwiki-spends`. `FARM_API_SPEND=authors` lets the owner of any site on the farm run them; the default, `private`, keeps them to private sites; `none` refuses them everywhere.\n- **Marking.** `FARM_API_PUBLIC_REFUSE` lists scopes (`plugin.operationId`) a public site refuses even to its owner, or `all`.\n- **The machine itself.** An operation that acts on the farm's own machine (its Keychain, its microphone, its restarts) declares `x-fedwiki-private-only` and is refused on every public site.\n\nThe gate sits at every door and has to: a handler is a plain function that never sees who asked, so only something holding the request can judge. The route refuses with a status, the form refuses with a page, and the agent door does not offer a write at all — a request arriving there carries no session, so the gate could only ever refuse it, and a tool that cannot succeed is worse than no tool."
     },
     {
       "type": "markdown",
       "id": "b6d1e94c07a3f582",
-      "text": "# A Door For Agents\n\nThe merged document is legible to a viewer and the generated pages are legible to a reader. The third reading of the same declarations is for the reader that will actually call them: every mounted operation is offered as a tool at `/system/api/mcp`.\n\nNothing extra is declared to make that happen. A tool is a name, a description and a schema for what it takes, and an operation already carries all three \u2014 so the translation is mechanical and a plugin that knows nothing about agents gets one anyway. The tool calls the very same function the route calls, not a copy of it, so the two cannot answer differently.\n\nIt is written out rather than carried. The official library measures 4.3 MB across seventeen dependencies \u2014 including a second HTTP framework and a second express \u2014 against a farm whose heaviest plugin is 3.3 MB. The methods actually needed are five, and they fit in one file. Same judgement as the viewer, in a worse place: a viewer is weight in one browser and declinable, this would be weight in every farm.\n\nOnly read-only operations are offered, exactly as the routes are \u2014 one decision governing the route, the document and the tool alike. A request carrying an `Origin` from another site is refused, so a page open in another tab cannot put questions to the farm and read the answers."
+      "text": "# A Door For Agents\n\nThe merged document is legible to a viewer and the generated pages are legible to a reader. The third reading of the same declarations is for the reader that will actually call them: every mounted operation is offered as a tool at `/system/api/mcp`.\n\nNothing extra is declared to make that happen. A tool is a name, a description and a schema for what it takes, and an operation already carries all three — so the translation is mechanical and a plugin that knows nothing about agents gets one anyway. The tool calls the very same function the route calls, not a copy of it, so the two cannot answer differently.\n\nIt is written out rather than carried. The official library measures 4.3 MB across seventeen dependencies — including a second HTTP framework and a second express — against a farm whose heaviest plugin is 3.3 MB. The methods actually needed are five, and they fit in one file. Same judgement as the viewer, in a worse place: a viewer is weight in one browser and declinable, this would be weight in every farm.\n\nOnly read-only operations are offered, exactly as the routes are — one decision governing the route, the document and the tool alike. A request carrying an `Origin` from another site is refused, so a page open in another tab cannot put questions to the farm and read the answers."
     },
     {
       "type": "markdown",
       "id": "b6f01d94ac72e358",
-      "text": "# One Document For The Whole Farm\n\nEvery declaration is merged into `/system/api.json` \u2014 one request that tells a reader, or an agent, every capability the farm offers and how to call it. It is served so other origins may read it, which is the whole compatibility claim: nothing here bundles a viewer, and anyone who wants one points it at that address and gets exactly what they expect.\n\nThe document describes what is mounted, never what was merely declared. What was refused or skipped appears under `x-fedwiki-farm` instead, so absence is visible rather than silent. Components are namespaced by plugin, refs rewritten with them, because two plugins may both call a schema `Result` and mean different things."
+      "text": "# One Document For The Whole Farm\n\nEvery declaration is merged into `/system/api.json` — one request that tells a reader, or an agent, every capability the farm offers and how to call it. It is served so other origins may read it, which is the whole compatibility claim: nothing here bundles a viewer, and anyone who wants one points it at that address and gets exactly what they expect.\n\nThe document describes what is mounted, never what was merely declared. What was refused or skipped appears under `x-fedwiki-farm` instead, so absence is visible rather than silent. Components are namespaced by plugin, refs rewritten with them, because two plugins may both call a schema `Result` and mean different things."
     },
     {
       "type": "markdown",
       "id": "7de3a094c1b562fa",
-      "text": "# The Reference Is Pages\n\nThe wiki is already a documentation viewer, so the reference for an interface is not an application embedded in a page \u2014 it is the page. Each declaring plugin gets one, written as ordinary markdown and terminal items, inheriting the theme and the search index, with a call on it that actually runs. [[Farm API]] lists them.\n\nThey are written into this plugin's own pages folder, so the wiki serves them on every site of the farm without storing a copy in any of them. Regeneration keeps them true; forking one to a site makes a copy that regeneration can never reach, which is where annotation belongs."
+      "text": "# The Reference Is Pages\n\nThe wiki is already a documentation viewer, so the reference for an interface is not an application embedded in a page — it is the page. Each declaring plugin gets one, written as ordinary markdown and terminal items, inheriting the theme and the search index, with a call on it that actually runs. [[Farm API]] lists them.\n\nThey are written into this plugin's own pages folder, so the wiki serves them on every site of the farm without storing a copy in any of them. Regeneration keeps them true; forking one to a site makes a copy that regeneration can never reach, which is where annotation belongs."
     },
     {
       "type": "markdown",
       "id": "d3db284b0698a825",
-      "text": "# What Is Guarded\n\n- **Isolation.** The wiki catches a failure in this plugin but not in the plugins it loads, so each declaration is read, loaded and mounted inside its own guard. A bad declaration costs one interface, never all of them.\n- **Versioning.** A declaration carries a version, and one that is not understood is refused whole rather than mounted halfway.\n- **Reading only, for now.** An operation is mounted only if it is a GET marked `x-fedwiki-read-only`. Anything that changes state stays shut until it can be properly gated \u2014 a plugin that says nothing gets nothing.\n- **Honest absence.** A wiki without this plugin simply has no interfaces. Every plugin still works without one; the interface is an addition, never a dependency."
+      "text": "# What Is Guarded\n\n- **Isolation.** The wiki catches a failure in this plugin but not in the plugins it loads, so each declaration is read, loaded and mounted inside its own guard. A bad declaration costs one interface, never all of them.\n- **Versioning.** A declaration carries a version, and one that is not understood is refused whole rather than mounted halfway.\n- **Reading only, for now.** An operation is mounted only if it is a GET marked `x-fedwiki-read-only`. Anything that changes state stays shut until it can be properly gated — a plugin that says nothing gets nothing.\n- **Honest absence.** A wiki without this plugin simply has no interfaces. Every plugin still works without one; the interface is an addition, never a dependency."
     },
     {
       "type": "markdown",
@@ -74,12 +74,12 @@
     {
       "type": "markdown",
       "id": "31a265b1f075c3f6",
-      "text": "A caller presenting one of those secrets as `X-Api-Key` may perform the operation its scope names \u2014 `*` for any write on the site, `<plugin>.<operation>` for one \u2014 and nothing else. The key answers both refusals at once, place and person, because it is not self-served: the site owner wrote it by hand into a directory the web cannot read, which is the out-loud authorisation the place check was asking for. No file, no door, no change in behaviour. The file is read by modification time, so a key added or revoked takes effect without a restart. The gate description on `/system/api.json` says whether a site offers the door.\n\nThe file format is shared with [[PlugMan Plugin]], which reads it on its own for its install and restart routes. The sharing is the format, never the code \u2014 see [[Farm Key Plan]]."
+      "text": "A caller presenting one of those secrets as `X-Api-Key` may perform the operation its scope names — `*` for any write on the site, `<plugin>.<operation>` for one — and nothing else. The key answers both refusals at once, place and person, because it is not self-served: the site owner wrote it by hand into a directory the web cannot read, which is the out-loud authorisation the place check was asking for. No file, no door, no change in behaviour. The file is read by modification time, so a key added or revoked takes effect without a restart. The gate description on `/system/api.json` says whether a site offers the door.\n\nThe file format is shared with [[PlugMan Plugin]], which reads it on its own for its install and restart routes. The sharing is the format, never the code — see [[Farm Key Plan]]."
     },
     {
       "type": "markdown",
       "id": "c3cbf55e71e5a86a",
-      "text": "## Repositories\n\n- GitHub \u2014 https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-farm\n- npm \u2014 https://www.npmjs.com/package/wiki-plugin-farm"
+      "text": "## Repositories\n\n- GitHub — https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-farm\n- npm — https://www.npmjs.com/package/wiki-plugin-farm"
     },
     {
       "type": "markdown",
@@ -99,7 +99,7 @@
     {
       "type": "markdown",
       "id": "0b7c5e1936ad24f8",
-      "text": "# See\n\n[[Farm API]] \u00b7 [[FreeCulture API]] \u00b7 [[About FreeCulture Plugin]]"
+      "text": "# See\n\n[[Farm API]] · [[FreeCulture API]] · [[About FreeCulture Plugin]]"
     }
   ],
   "journal": [
@@ -116,7 +116,7 @@
         ]
       },
       "date": 1785009600000,
-      "provenance": "Authored by an AI agent \u2014 Claude Code (claude-opus-5) via the [[fedwiki-create-plugin]] skill. [https://claude.com/claude-code Claude Code]"
+      "provenance": "Authored by an AI agent — Claude Code (claude-opus-5) via the [[fedwiki-create-plugin]] skill. [https://claude.com/claude-code Claude Code]"
     },
     {
       "type": "add",
@@ -124,7 +124,7 @@
       "item": {
         "type": "markdown",
         "id": "c3cbf55e71e5a86a",
-        "text": "## Repositories\n\n- GitHub \u2014 https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-farm\n- npm \u2014 https://www.npmjs.com/package/wiki-plugin-farm"
+        "text": "## Repositories\n\n- GitHub — https://github.com/Hitchhikers-Guide-to-the-Galaxy/wiki-plugin-farm\n- npm — https://www.npmjs.com/package/wiki-plugin-farm"
       },
       "after": "d3db284b0698a825",
       "date": 1785193529924,
@@ -160,11 +160,21 @@
       "item": {
         "type": "markdown",
         "id": "31a265b1f075c3f6",
-        "text": "A caller presenting one of those secrets as `X-Api-Key` may perform the operation its scope names \u2014 `*` for any write on the site, `<plugin>.<operation>` for one \u2014 and nothing else. The key answers both refusals at once, place and person, because it is not self-served: the site owner wrote it by hand into a directory the web cannot read, which is the out-loud authorisation the place check was asking for. No file, no door, no change in behaviour. The file is read by modification time, so a key added or revoked takes effect without a restart. The gate description on `/system/api.json` says whether a site offers the door.\n\nThe file format is shared with [[PlugMan Plugin]], which reads it on its own for its install and restart routes. The sharing is the format, never the code \u2014 see [[Farm Key Plan]]."
+        "text": "A caller presenting one of those secrets as `X-Api-Key` may perform the operation its scope names — `*` for any write on the site, `<plugin>.<operation>` for one — and nothing else. The key answers both refusals at once, place and person, because it is not self-served: the site owner wrote it by hand into a directory the web cannot read, which is the out-loud authorisation the place check was asking for. No file, no door, no change in behaviour. The file is read by modification time, so a key added or revoked takes effect without a restart. The gate description on `/system/api.json` says whether a site offers the door.\n\nThe file format is shared with [[PlugMan Plugin]], which reads it on its own for its install and restart routes. The sharing is the format, never the code — see [[Farm Key Plan]]."
       },
       "after": "e7dd4a5223315846",
       "date": 1788431692770,
       "provenance": "Claude Code, 3 September 2026"
+    },
+    {
+      "type": "edit",
+      "id": "c73e0a95f1b48d26",
+      "item": {
+        "type": "markdown",
+        "id": "c73e0a95f1b48d26",
+        "text": "# Reading Is Offered, Writing Is Asked\n\nAn operation says which kind it is, and saying nothing is not a third kind — an unmarked operation mounts nowhere. Inferring it from the method would work almost always, and that is the objection: an author who never considered the question would have their silence read as an answer.\n\nA write is asked **who**, and that question is handed to the wiki's own test for who may edit this site — so a signed-in owner may do through the farm what they may already do by hand, and nothing mounted here can become a way around the wiki's own answer. Since 0.10.0 a public site no longer refuses writes by default; the farm's owner decides the rest, once for the whole farm:\n\n- **Spending.** An operation that uses the farm's keys or machine (a model, a transcription, an index build) declares `x-fedwiki-spends`. `FARM_API_SPEND=authors` lets the owner of any site on the farm run them; the default, `private`, keeps them to private sites; `none` refuses them everywhere.\n- **Marking.** `FARM_API_PUBLIC_REFUSE` lists scopes (`plugin.operationId`) a public site refuses even to its owner, or `all`.\n- **The machine itself.** An operation that acts on the farm's own machine (its Keychain, its microphone, its restarts) declares `x-fedwiki-private-only` and is refused on every public site.\n\nThe gate sits at every door and has to: a handler is a plain function that never sees who asked, so only something holding the request can judge. The route refuses with a status, the form refuses with a page, and the agent door does not offer a write at all — a request arriving there carries no session, so the gate could only ever refuse it, and a tool that cannot succeed is worse than no tool."
+      },
+      "date": 1792507074308
     }
   ],
   "plugin": "farm"

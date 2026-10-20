@@ -15,7 +15,7 @@
 
 const { deriveEnum } = require('./vocabulary.js')
 const { sitesOf, farmIdentity, contextVocabulary } = require('./context.js')
-const { describeGate, publicWritesAllowed } = require('./gate.js')
+const { describeGate, publicWritesRefused, publicRefuseScopes, spendPolicy } = require('./gate.js')
 
 const OPENAPI_VERSION = '3.1.0'
 
@@ -134,7 +134,7 @@ const mergeDocument = ({ registry, refused = [], origin, version, farmRoot }) =>
       // Say which operations are gated, and how. A reader refused by a rule
       // they were never told about learns only that something is broken; the
       // rule itself belongs in the description, beside the operation it governs.
-      if (merged['x-fedwiki-writes'] === true) merged['x-fedwiki-gated'] = describeGate(origin, undefined, merged['x-fedwiki-gate'])
+      if (merged['x-fedwiki-writes'] === true) merged['x-fedwiki-gated'] = describeGate(origin, undefined, merged['x-fedwiki-gate'], merged['x-fedwiki-spends'] === true, merged['x-fedwiki-private-only'] === true)
       merged.tags = [name]
       merged.operationId = `${name}_${operationId}` // unique across the farm
       merged['x-fedwiki-plugin'] = declaration.plugin
@@ -185,7 +185,12 @@ const mergeDocument = ({ registry, refused = [], origin, version, farmRoot }) =>
     id: farmIdentity(farmRoot),
     writes: {
       mounted: Object.values(paths).flatMap(m => Object.values(m)).filter(o => o['x-fedwiki-writes']).length,
-      publicSites: publicWritesAllowed() ? 'allowed' : 'refused unless FARM_API_PUBLIC_WRITES is set',
+      publicSites: publicWritesRefused()
+        ? 'refused — marked by FARM_API_PUBLIC_REFUSE'
+        : publicRefuseScopes().length
+          ? `allowed to the site owner, except ${publicRefuseScopes().join(', ')}`
+          : 'allowed to the site owner',
+      spending: spendPolicy(),
       offeredToAgents: false,
     },
     sites: sitesOf(farmRoot),

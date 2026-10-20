@@ -6,15 +6,20 @@
 // degree — a read that goes wrong wastes a request, a write that goes wrong
 // changes somebody's page.
 //
-// Two refusals, in this order, because the order is itself the answer to a
-// question a caller would otherwise ask wrongly:
+// Two questions, in this order:
 //
-//   1. Is this farm willing to be written to at all, here?
+//   1. Has this place been marked as refusing this write?
 //   2. Is this caller allowed to write?
 //
-// Asking them the other way round would tell an unauthenticated caller to sign
-// in, on a site where signing in would not have helped either. Refusing on the
-// place first is both more honest and less of an invitation.
+// The second is the wiki's own test, the one it applies to every page change,
+// so a signed-in owner may do through this farm what they may already do by
+// hand. Until 0.10.0 the first question was asked the other way round: a
+// public site refused every write unless the operator listed it, which meant
+// each new operation (Revise Plan's save, say) was refused to the very owner
+// who could have made the same edit in the browser. David, 2026-10-20: "the
+// default should be to allow revision and only if we mark it not allowed
+// should it be prevented". So a public site now refuses only what
+// FARM_API_PUBLIC_REFUSE names, and the owner test is never skipped there.
 
 /**
  * A site nobody outside this machine can reach.
@@ -49,26 +54,74 @@ const privateSuffixes = () =>
     .filter(Boolean)
 
 /**
- * Whether this farm has been told, out loud, that writes to public sites are
- * wanted. Off unless set, and set by the person running the farm rather than by
- * anything a plugin declares — a plugin asking for its own writes to be exposed
- * publicly is exactly the request that should not be self-served.
+ * Which writes a public site refuses even to its signed-in owner.
+ *
+ * `FARM_API_PUBLIC_REFUSE` is `all` (or `1`, `yes`, `true`, `on`) to refuse
+ * every write on a public site, or a comma list of scopes —
+ * `<plugin>.<operationId>`, the names the api-key door uses — to refuse only
+ * those. Unset, nothing is refused on the place and the wiki's owner test
+ * decides. The old blanket off-switch, FARM_API_PUBLIC_WRITES=off (or 0, no,
+ * false), still refuses everything.
  */
-//
-// Either a switch (`1`, `yes`, `true`, `on`) that opens every write, or a comma
-// list of scopes — `<plugin>.<operationId>`, the same names the api-key door
-// uses — that opens only those. The list is what lets a public farm take audio
-// from its site owners without also opening every page-changing operation.
+const ON = /^(1|yes|true|on|all)$/i
+const OFF = /^(0|no|false|off)$/i
 const publicWritesSetting = () => String(process.env.FARM_API_PUBLIC_WRITES || '').trim()
+const publicRefuseSetting = () => String(process.env.FARM_API_PUBLIC_REFUSE || '').trim()
+const publicRefuseScopes = () => {
+  const setting = publicRefuseSetting()
+  if (!setting || ON.test(setting) || OFF.test(setting)) return []
+  return setting.split(',').map(s => s.trim()).filter(Boolean)
+}
+const publicWritesRefused = scope => {
+  if (OFF.test(publicWritesSetting())) return true
+  if (ON.test(publicRefuseSetting())) return true
+  return Boolean(scope) && publicRefuseScopes().includes(scope)
+}
+
+/**
+ * Who may spend this farm's keys and machine.
+ *
+ * Some operations cost the person running the farm: a model behind their API
+ * key or subscription, a transcription on their hardware. They declare
+ * `x-fedwiki-spends: true`. Whether a site's author may run them is the farm
+ * owner's decision, made once for the whole farm — David, 2026-10-20: "for my
+ * farm I am OK giving authors access to my keys - but for other farms the farm
+ * owner may not be - this is a farm wide policy".
+ *
+ * `FARM_API_SPEND`:
+ *   private  (the default) — only on private sites, i.e. the farm owner's own;
+ *            a public site's author is refused.
+ *   authors  — the owner of any site on this farm (signed in, by the wiki's own
+ *            test) may spend.
+ *   none     — nobody, private sites included (api keys aside).
+ *
+ * The default is the cautious one because this plugin is installed on farms
+ * whose owners never read this comment: being wrong that way costs a refusal
+ * the owner can lift; the other way, a bill.
+ */
+const spendPolicy = () => {
+  const setting = String(process.env.FARM_API_SPEND || '').trim().toLowerCase()
+  return ['authors', 'none'].includes(setting) ? setting : 'private'
+}
+const spendRefused = origin => {
+  const policy = spendPolicy()
+  if (policy === 'none') return true
+  if (policy === 'authors') return false
+  return !isPrivateSite(origin)
+}
+
+// FARM_API_PUBLIC_WRITES now only widens cross-origin answers (below): a
+// switch, or a list of scopes a page from another origin may call on a public
+// site. Before 0.10.0 it was also the list of writes a public site allowed.
 const publicWritesAllowed = scope => {
   const setting = publicWritesSetting()
-  if (/^(1|yes|true|on)$/i.test(setting)) return true
+  if (ON.test(setting)) return true
   if (!scope || !setting) return false
   return setting.split(',').map(s => s.trim()).includes(scope)
 }
 const publicWriteScopes = () => {
   const setting = publicWritesSetting()
-  if (!setting || /^(1|yes|true|on|0|no|false|off)$/i.test(setting)) return []
+  if (!setting || ON.test(setting) || OFF.test(setting)) return []
   return setting.split(',').map(s => s.trim()).filter(Boolean)
 }
 
@@ -90,7 +143,18 @@ const keys = require('./keys.js')
 // for any caller: in particular a browser on the laptop the farm runs on,
 // reading a page served from elsewhere. The place-check still stands, so a
 // public farm refuses it exactly as before.
-const refuseWrite = ({ app, req, origin, status, scope, gate = 'rights' }) => {
+const refuseWrite = ({ app, req, origin, status, scope, gate = 'rights', spends = false, privateOnly = false }) => {
+  // An operation that acts on the farm's own machine rather than on a page —
+  // its Keychain, its microphone, its restarts — declares
+  // x-fedwiki-private-only and is refused on every public site, key or no key:
+  // a public site's author is not the person whose machine it is.
+  if (privateOnly && !isPrivateSite(origin)) {
+    return {
+      status: 403,
+      error: `${scope || 'this operation'} acts on the farm's own machine and is offered only on private sites; ${origin} is public.`,
+    }
+  }
+
   // A key held for this site answers both questions at once, and deliberately.
   // The place-check exists because a plugin should not be able to expose its own
   // writes publicly — but a key is not self-served: it is a secret the site
@@ -99,20 +163,31 @@ const refuseWrite = ({ app, req, origin, status, scope, gate = 'rights' }) => {
   // rather than per farm. A site with no key file is unaffected.
   if (keys.authorize({ status, req, scope })) return null
 
-  if (!isPrivateSite(origin) && !publicWritesAllowed(scope)) {
+  if (!isPrivateSite(origin) && publicWritesRefused(scope)) {
     return {
       status: 403,
       error:
-        `${origin} is not a private site, and this farm has not been asked to allow writes to public ones. ` +
-        `Set FARM_API_PUBLIC_WRITES to turn that on (or list ${scope || 'the operation'} in it), knowing that it opens page changes to anyone this farm ` +
-        'considers authorised — or give the caller an API key in this site\'s status/api-keys.json.',
+        `${origin} is a public site and this farm is marked to refuse ${scope || 'this operation'} there ` +
+        '(FARM_API_PUBLIC_REFUSE, or FARM_API_PUBLIC_WRITES=off). Lift that mark, ' +
+        'or give the caller an API key in this site\'s status/api-keys.json.',
+    }
+  }
+
+  if (spends && spendRefused(origin)) {
+    return {
+      status: 403,
+      error:
+        `${scope || 'this operation'} spends this farm's keys or machine (a model, a transcription), and this farm ` +
+        (spendPolicy() === 'none'
+          ? 'lets nobody spend them (FARM_API_SPEND=none). '
+          : `keeps that to its private sites, which ${origin} is not. The farm owner can let site authors spend them with FARM_API_SPEND=authors. `) +
+        'An API key in this site\'s status/api-keys.json also opens it.',
     }
   }
 
   // A place-gated operation skips the who-check only where the place itself is
-  // private. On a public site it is answered at all only because
-  // FARM_API_PUBLIC_WRITES listed it, and there the caller must still be someone
-  // the wiki lets edit the site — otherwise anyone on the internet could spend
+  // private. On a public site the caller must be someone the wiki lets edit
+  // the site — otherwise anyone on the internet could spend
   // this farm's transcription (measured 2026-10-15: an anonymous post ran a
   // whisper job on the public farm). The laptop door is a private site, so a
   // page from elsewhere still gets heard there without a login.
@@ -141,11 +216,11 @@ const refuseWrite = ({ app, req, origin, status, scope, gate = 'rights' }) => {
  * Published so that a reader is told the rule before being refused by it, and
  * so an agent can see that a tool it is not offered exists and why.
  */
-const describeGate = (origin, status, gate = 'rights') => ({
+const describeGate = (origin, status, gate = 'rights', spends = false, privateOnly = false) => ({
   asks:
     gate === 'place'
-      ? 'the place only on a private site — any caller; on a public site that FARM_API_PUBLIC_WRITES allows, the caller too'
-      : 'the place, then the caller',
+      ? 'the place only on a private site — any caller; on a public site, the caller too'
+      : 'the caller (and, on a public site, whether the farm marks this operation refused)',
   rights:
     gate === 'place'
       ? 'not asked on a private site — this operation changes no page; on a public site, may edit this site, by the wiki\'s own test'
@@ -156,11 +231,23 @@ const describeGate = (origin, status, gate = 'rights') => ({
       : keys.offered(status)
         ? 'accepted — an X-Api-Key listed in this site\'s status/api-keys.json may write without signing in'
         : 'not offered here — this site has no status/api-keys.json',
-  publicSites: publicWritesAllowed()
-    ? 'allowed — FARM_API_PUBLIC_WRITES is set'
-    : publicWriteScopes().length
-      ? `allowed only for ${publicWriteScopes().join(', ')} — FARM_API_PUBLIC_WRITES lists them`
-      : 'refused unless FARM_API_PUBLIC_WRITES is set',
+  publicSites: publicWritesRefused()
+    ? 'refused — FARM_API_PUBLIC_REFUSE (or FARM_API_PUBLIC_WRITES=off) marks every write'
+    : publicRefuseScopes().length
+      ? `allowed to the site owner, except ${publicRefuseScopes().join(', ')} — FARM_API_PUBLIC_REFUSE lists them`
+      : 'allowed to the site owner, by the wiki\'s own test',
+  privateOnly: privateOnly ? 'refused on every public site — this operation acts on the farm\'s own machine' : undefined,
+  spends: spends
+    ? {
+        policy: spendPolicy(),
+        means:
+          spendPolicy() === 'authors'
+            ? 'the owner of any site on this farm may run it (FARM_API_SPEND=authors)'
+            : spendPolicy() === 'none'
+              ? 'nobody may run it (FARM_API_SPEND=none), api keys aside'
+              : 'only on this farm\'s private sites (FARM_API_SPEND unset or private)',
+      }
+    : undefined,
   here: origin ? (isPrivateSite(origin) ? 'private' : 'public') : undefined,
   offeredToAgents: false,
 })
@@ -186,4 +273,4 @@ const allowOrigin = (req, res, method) => {
   for (const [k, v] of Object.entries(CORS_HEADERS)) res.header(k, v)
 }
 
-module.exports = { crossOriginAllowed, allowOrigin, isPrivateSite, privateSuffixes, publicWritesAllowed, publicWriteScopes, refuseWrite, describeGate, keys }
+module.exports = { crossOriginAllowed, allowOrigin, isPrivateSite, privateSuffixes, publicWritesAllowed, publicWriteScopes, publicWritesRefused, publicRefuseScopes, spendPolicy, spendRefused, refuseWrite, describeGate, keys }

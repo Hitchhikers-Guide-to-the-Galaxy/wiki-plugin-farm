@@ -84,7 +84,7 @@ const tryOperation = async ({ document, registry, params = {}, origin, site, sta
   // because a refusal the reader never sees is the same to them as a button
   // that does nothing.
   if (entry.writes) {
-    const refusal = refuseWrite({ app, req, origin: site, status, scope: `${shortName}.${entry.operationId}` })
+    const refusal = refuseWrite({ app, req, origin: site, status, scope: `${shortName}.${entry.operationId}`, gate: entry.gate, spends: entry.spends, privateOnly: entry.privateOnly })
     if (refusal) {
       return renders.renderProblem({
         title: 'Not allowed to change that',

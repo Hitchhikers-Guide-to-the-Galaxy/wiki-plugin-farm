@@ -151,17 +151,24 @@ const main = async () => {
   routes.length = 0
   await mountDeclaration({ app, declaration, context: pubContext })
   r = await ask('POST', `${UP}?folder=p&name=a.webm`, { body: audio, type: 'audio/webm' })
-  check('public site, no setting — 403', r.status === 403)
-  process.env.FARM_API_PRIVATE_SUFFIXES = '.private.fish'
-  r = await ask('POST', `${UP}?folder=p&name=a.webm`, { body: audio, type: 'audio/webm' })
-  check('private suffix — 200', r.status === 200, JSON.stringify(r.json))
-  delete process.env.FARM_API_PRIVATE_SUFFIXES
-  process.env.FARM_API_PUBLIC_WRITES = 'farm.assetsUpload'
+  check('public site, no mark — the owner may upload (200)', r.status === 200, JSON.stringify(r.json))
+  process.env.FARM_API_PUBLIC_REFUSE = 'farm.assetsUpload'
   r = await ask('POST', `${UP}?folder=p&name=b.webm`, { body: audio, type: 'audio/webm' })
-  check('scoped public write — 200', r.status === 200)
-  process.env.FARM_API_PUBLIC_WRITES = 'pod.somethingElse'
+  check('public site marked to refuse this scope — 403', r.status === 403)
+  process.env.FARM_API_PRIVATE_SUFFIXES = '.private.fish'
+  r = await ask('POST', `${UP}?folder=p&name=b.webm`, { body: audio, type: 'audio/webm' })
+  check('private suffix — the public mark does not apply (200)', r.status === 200, JSON.stringify(r.json))
+  delete process.env.FARM_API_PRIVATE_SUFFIXES
+  process.env.FARM_API_PUBLIC_REFUSE = 'pod.somethingElse'
   r = await ask('POST', `${UP}?folder=p&name=c.webm`, { body: audio, type: 'audio/webm' })
-  check('other scope listed — 403', r.status === 403)
+  check('another scope marked — 200', r.status === 200)
+  process.env.FARM_API_PUBLIC_REFUSE = 'all'
+  r = await ask('POST', `${UP}?folder=p&name=d.webm`, { body: audio, type: 'audio/webm' })
+  check('every write marked — 403', r.status === 403)
+  delete process.env.FARM_API_PUBLIC_REFUSE
+  process.env.FARM_API_PUBLIC_WRITES = 'off'
+  r = await ask('POST', `${UP}?folder=p&name=e.webm`, { body: audio, type: 'audio/webm' })
+  check('the old off-switch still refuses — 403', r.status === 403)
   delete process.env.FARM_API_PUBLIC_WRITES
 
   // ---------- JSON bodies as arguments ----------

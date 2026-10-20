@@ -284,6 +284,10 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
       // from another origin may call this at all (never by default).
       const gate = operation['x-fedwiki-gate'] === 'place' ? 'place' : 'rights'
       const crossOrigin = operation['x-fedwiki-cross-origin'] === true
+      // Whether a call spends the farm's money or machine — a model behind an
+      // API key, a transcription — so the farm's spend policy is asked too.
+      const spends = operation['x-fedwiki-spends'] === true
+      const privateOnly = operation['x-fedwiki-private-only'] === true
 
       if (readOnly && writes) {
         skipped.push({ where, why: 'declares itself both read-only and writing — one of the two is wrong' })
@@ -355,6 +359,8 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
               status: context.status,
               scope,
               gate,
+              spends,
+              privateOnly,
             })
             if (refusal) {
               return res
@@ -382,7 +388,7 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
         }
       })
 
-      mounted.push({ method, route, operationId, summary: operation.summary || '', call, writes, gate, crossOrigin })
+      mounted.push({ method, route, operationId, summary: operation.summary || '', call, writes, gate, crossOrigin, spends, privateOnly })
     }
   }
 

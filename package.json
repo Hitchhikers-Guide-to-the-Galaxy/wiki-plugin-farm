@@ -1,7 +1,7 @@
 {
   "name": "wiki-plugin-farm",
-  "version": "0.9.3",
-  "description": "Federated Wiki - Farm Plugin \u2014 one server component for the whole farm: discovers what sibling plugins declare as an interface and mounts it, so a plugin can offer an API without growing a server of its own",
+  "version": "0.10.0",
+  "description": "Federated Wiki - Farm Plugin — one server component for the whole farm: discovers what sibling plugins declare as an interface and mounts it, so a plugin can offer an API without growing a server of its own",
   "type": "module",
   "files": [
     "api",

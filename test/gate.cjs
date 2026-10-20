@@ -14,16 +14,53 @@ const refused = (origin, extra = {}) => gate.refuseWrite({ ...noSecurity, origin
 check('rights gate on a private site still asks who (no security module → refused)', refused('http://localhost:4242')?.status === 403)
 check('place gate on a private site asks nobody', refused('http://localhost:4242', { gate: 'place' }) === null)
 check('place gate on a .local name', refused('http://pi5.local', { gate: 'place' }) === null)
-check('place gate on a public site is refused on the place', /not a private site/.test(refused('https://fedwiki.club', { gate: 'place' })?.error || ''))
-process.env.FARM_API_PUBLIC_WRITES = 'audionote.hear'
-check('place gate on a public site listed in FARM_API_PUBLIC_WRITES still asks who (no security module → refused)', refused('https://fedwiki.club', { gate: 'place' })?.status === 403)
+check('place gate on a public site still asks who (no security module → refused)', refused('https://fedwiki.club', { gate: 'place' })?.status === 403)
 const signedOut = { app: { securityhandler: { isAuthorized: () => false } } }
 const signedIn = { app: { securityhandler: { isAuthorized: () => true } } }
-check('place gate on a listed public site refuses a caller without rights', /needs the rights/.test(refused('https://fedwiki.club', { gate: 'place', ...signedOut })?.error || ''))
-check('place gate on a listed public site passes the site owner', refused('https://fedwiki.club', { gate: 'place', ...signedIn }) === null)
-check('place gate on a private site still asks nobody while public writes are listed', refused('http://localhost:4242', { gate: 'place', ...signedOut }) === null)
-check('rights gate on that site still asks who', refused('https://fedwiki.club')?.status === 403)
+check('place gate on a public site refuses a caller without rights', /needs the rights/.test(refused('https://fedwiki.club', { gate: 'place', ...signedOut })?.error || ''))
+check('place gate on a public site passes the site owner', refused('https://fedwiki.club', { gate: 'place', ...signedIn }) === null)
+check('rights gate on a public site passes the site owner with no setting', refused('https://fedwiki.club', signedIn) === null)
+check('rights gate on a public site refuses a caller without rights', /needs the rights/.test(refused('https://fedwiki.club', signedOut)?.error || ''))
+check('place gate on a private site asks nobody', refused('http://localhost:4242', { gate: 'place', ...signedOut }) === null)
+process.env.FARM_API_PUBLIC_REFUSE = 'audionote.hear'
+check('a public site marked to refuse the scope refuses its owner', /marked to refuse audionote\.hear/.test(refused('https://fedwiki.club', signedIn)?.error || ''))
+check('the mark names one scope only', refused('https://fedwiki.club', { ...signedIn, scope: 'plan.saveRevision' }) === null)
+check('the mark leaves a private site alone', refused('http://localhost:4242', { gate: 'place' }) === null)
+process.env.FARM_API_PUBLIC_REFUSE = 'all'
+check('all refuses every scope on a public site', refused('https://fedwiki.club', { ...signedIn, scope: 'plan.saveRevision' })?.status === 403)
+delete process.env.FARM_API_PUBLIC_REFUSE
+process.env.FARM_API_PUBLIC_WRITES = 'off'
+check('FARM_API_PUBLIC_WRITES=off still refuses on a public site', refused('https://fedwiki.club', signedIn)?.status === 403)
+process.env.FARM_API_PUBLIC_WRITES = 'audionote.hear'
+check('a FARM_API_PUBLIC_WRITES list no longer restricts other scopes', refused('https://fedwiki.club', { ...signedIn, scope: 'plan.saveRevision' }) === null)
+check('but still widens cross-origin for the scopes it lists', gate.crossOriginAllowed('https://fedwiki.club', 'audionote.hear') === true)
 delete process.env.FARM_API_PUBLIC_WRITES
+
+// The farm-wide spend policy: operations that use the farm's keys or machine.
+const spend = { ...signedIn, scope: 'plan.revise', spends: true }
+delete process.env.FARM_API_SPEND
+check('spend, default policy: a public site\'s owner is refused', /FARM_API_SPEND=authors/.test(refused('https://arena.solidarity.quest', spend)?.error || ''))
+process.env.FARM_API_PRIVATE_SUFFIXES = '.private.fish'
+check('spend, default policy: a private-suffix site\'s owner may', refused('https://dns.private.fish', spend) === null)
+delete process.env.FARM_API_PRIVATE_SUFFIXES
+check('spend, default policy: a localhost owner may', refused('http://demo.localhost', spend) === null)
+check('no spend: the public owner may still save a page', refused('https://arena.solidarity.quest', { ...spend, spends: false }) === null)
+process.env.FARM_API_SPEND = 'authors'
+check('spend, authors: a public site\'s owner may', refused('https://arena.solidarity.quest', spend) === null)
+check('spend, authors: still asks who', /needs the rights/.test(refused('https://arena.solidarity.quest', { ...spend, ...signedOut })?.error || ''))
+check('spend, authors: a public mark still refuses', (process.env.FARM_API_PUBLIC_REFUSE = 'plan.revise', refused('https://arena.solidarity.quest', spend)?.status === 403))
+delete process.env.FARM_API_PUBLIC_REFUSE
+process.env.FARM_API_SPEND = 'none'
+check('spend, none: even localhost is refused', /FARM_API_SPEND=none/.test(refused('http://demo.localhost', spend)?.error || ''))
+process.env.FARM_API_SPEND = 'nonsense'
+check('spend, unknown value reads as private', gate.spendPolicy() === 'private')
+delete process.env.FARM_API_SPEND
+const ds = gate.describeGate('https://arena.solidarity.quest', undefined, 'rights', true)
+check('described: spends + policy', ds.spends && ds.spends.policy === 'private')
+
+// Private-only: the farm machine's own operations.
+check('private-only refuses a public site\'s owner', /only on private sites/.test(refused('https://arena.solidarity.quest', { ...signedIn, scope: 'keychain.reveal', privateOnly: true })?.error || ''))
+check('private-only passes a localhost owner', refused('http://wiki.localhost', { ...signedIn, scope: 'keychain.reveal', privateOnly: true }) === null)
 
 check('cross-origin allowed on a private site', gate.crossOriginAllowed('http://localhost:4242', 'audionote.hear') === true)
 check('cross-origin refused on a public site', gate.crossOriginAllowed('https://fedwiki.club', 'audionote.hear') === false)
