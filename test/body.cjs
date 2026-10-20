@@ -201,6 +201,7 @@ const main = async () => {
                       transcript: { type: 'string' },
                       limit: { type: 'integer', default: 5 },
                       tags: { type: 'array' },
+                      story: { type: 'array', items: { type: 'object' } },
                     },
                   },
                 },
@@ -221,6 +222,9 @@ const main = async () => {
   check('json body — default applied', r.json && r.json.limit === 5)
   check('json body — array kept', r.json && Array.isArray(r.json.tags) && r.json.tags.length === 2)
   check('json body — query still read', r.json && r.json.q === 'hi')
+  const story = [{ type: 'paragraph', id: 'a1', text: 'one, two' }, { type: 'plan', id: 'b2', text: 'STATUS' }]
+  r = await ask('POST', '/system/api/echo/echo.json', { body: JSON.stringify({ transcript: 't', story }), type: 'application/json' })
+  check('json body — an array of objects arrives whole', r.json && JSON.stringify(r.json.story) === JSON.stringify(story), JSON.stringify(r.json && r.json.story))
   r = await ask('POST', '/system/api/echo/echo.json', { body: JSON.stringify({}), type: 'application/json' })
   check('json body — required field missing, 400', r.status === 400)
 

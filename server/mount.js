@@ -60,8 +60,15 @@ const coerce = (raw, schema = {}) => {
       // promises a filled one. That divergence was live: the plugin's own older
       // route answered `?kinds=` with its default while this answered with
       // nothing.
+      //
+      // An element that is itself an object (a JSON body's array of page
+      // items, say — Save over the plan sends the ghost's story) is kept whole:
+      // String() would turn each into "[object Object]". Only plain values are
+      // trimmed and emptied out.
       if (Array.isArray(raw)) {
-        const kept = raw.map(v => String(v).trim()).filter(Boolean)
+        const kept = raw
+          .map(v => (v !== null && typeof v === 'object' ? v : String(v).trim()))
+          .filter(v => typeof v !== 'string' || v)
         return kept.length ? kept : undefined
       }
       const split = String(raw)
