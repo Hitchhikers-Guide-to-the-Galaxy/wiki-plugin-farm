@@ -81,7 +81,7 @@ const main = async () => {
   const declaration = readDeclaration(path.dirname(ownDir), path.basename(ownDir))
   check('farm declares itself as "farm"', declaration && declaration.name === 'farm')
   const { mounted, skipped } = await mountDeclaration({ app, declaration, context })
-  check('upload and list mounted', mounted.length === 2, JSON.stringify(skipped))
+  check('upload, list and sites mounted', mounted.length === 3, JSON.stringify(skipped))
 
   const UP = '/system/api/farm/assets/upload.json'
   const LIST = '/system/api/farm/assets/list.json'
@@ -126,6 +126,26 @@ const main = async () => {
   check('too large — no partial file', !fs.existsSync(path.join(site, 'assets', 'p', 'big.webm')))
   check('too large — farm-tmp clean', fs.readdirSync(path.join(status, 'farm-tmp')).length === 0)
   delete process.env.FARM_API_MAX_BODY_BYTES
+
+  // ---------- farm sites by owner ----------
+  const SITES = '/system/api/farm/sites.json'
+  for (const [name, o] of [['one.test', { name: 'David Bovill', oauth2: { id: 'david' } }], ['two.test', { name: 'Lena', oauth2: { id: 'lena' } }], ['three.test', { name: 'David Bovill' }]]) {
+    fs.mkdirSync(path.join(farmRoot, name, 'pages'), { recursive: true })
+    fs.mkdirSync(path.join(farmRoot, name, 'status'), { recursive: true })
+    fs.writeFileSync(path.join(farmRoot, name, 'status', 'owner.json'), JSON.stringify(o))
+  }
+  fs.mkdirSync(path.join(farmRoot, 'nopages.test', 'status'), { recursive: true })
+  r = await ask('GET', `${SITES}?owner=david`)
+  check('sites by id — 200', r.status === 200, JSON.stringify(r.json))
+  check('sites by id — the id\'s sites only', r.json && r.json.sites.join() === 'one.test', JSON.stringify(r.json))
+  r = await ask('GET', `${SITES}?owner=David%20Bovill`)
+  check('owner name — 400 (a name is not a login id)', r.status === 400)
+  r = await ask('GET', `${SITES}?owner=lena`)
+  check('another id — its own sites', r.json && r.json.sites.join() === 'two.test')
+  r = await ask('GET', `${SITES}?owner=nobody`)
+  check('unknown id — empty', r.json && r.json.sites.length === 0)
+  r = await ask('GET', `${SITES}?owner=..%2Fetc`)
+  check('bad id — 400', r.status === 400)
 
   owner = false
   r = await ask('POST', `${UP}?folder=p&name=intruder.webm`, { body: audio, type: 'audio/webm' })

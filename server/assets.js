@@ -91,4 +91,37 @@ const assetsList = ({ folder, status }) => {
   return { folder: f, files }
 }
 
-module.exports = { assetsUpload, assetsList, checkFolder, checkName }
+/**
+ * The sites of this farm owned by one person — read from each site's
+ * status/owner.json, matched on the oauth2 id (the login) or, failing that,
+ * the owner's name. Answers only for the id asked about: there is no listing
+ * of every owner. What it reveals, each site's footer already says.
+ */
+const OWNER_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/i
+const ownerOf = (farmRoot, site) => {
+  try {
+    const o = JSON.parse(fs.readFileSync(path.join(farmRoot, site, 'status', 'owner.json'), 'utf8'))
+    const ids = new Set()
+    for (const v of Object.values(o)) if (v && typeof v === 'object') for (const k of ['id', 'username', 'login']) if (v[k]) ids.add(String(v[k]).toLowerCase())
+    return { ids, name: o.name ? String(o.name) : '' }
+  } catch {
+    return null
+  }
+}
+const farmSites = ({ owner, farmRoot }) => {
+  const who = String(owner || '').trim()
+  if (!OWNER_ID.test(who)) throw problem(400, 'owner must be a login id: letters, digits, . _ -')
+  if (!farmRoot || !fs.existsSync(farmRoot)) return { owner: who, sites: [] }
+  const sites = fs
+    .readdirSync(farmRoot, { withFileTypes: true })
+    .filter(e => e.isDirectory() && fs.existsSync(path.join(farmRoot, e.name, 'pages')))
+    .map(e => e.name)
+    .filter(site => {
+      const o = ownerOf(farmRoot, site)
+      return !!o && (o.ids.has(who.toLowerCase()) || (o.ids.size === 0 && o.name.toLowerCase() === who.toLowerCase()))
+    })
+    .sort()
+  return { owner: who, sites }
+}
+
+module.exports = { assetsUpload, assetsList, farmSites, checkFolder, checkName }
