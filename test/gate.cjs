@@ -82,6 +82,22 @@ check('described as place-only', /place only/.test(d.asks) && /not asked/.test(d
 const dp = gate.describeGate('https://fedwiki.club', undefined, 'place')
 check('described as asking the caller too on a public site', /the caller too/.test(dp.asks) && /may edit/.test(dp.rights))
 
+
+// The refusal says what to do: a signed-out caller is told to sign in on that site.
+const passport = (user, owner = 'David Bovill') => ({ app: { securityhandler: {
+  isAuthorized: () => false, getUser: () => user, getOwner: () => owner } } })
+const out = refused('https://media.research.private.fish', passport(''))
+check('signed out: reason is signed-out', out?.reason === 'signed-out', JSON.stringify(out))
+check('signed out: says not signed in on that site', /You are not signed in on https:\/\/media\.research\.private\.fish\. Sign in there first/.test(out?.error || ''), out?.error)
+check('signed out: names whose rights', /David Bovill's rights/.test(out?.error || ''), out?.error)
+check('signed out: key route kept as an aside', /X-Api-Key/.test(out?.error || ''))
+const other = refused('https://media.research.private.fish', passport({ oauth2: { id: 'max', username: 'max', displayName: 'Max' } }))
+check('someone else: reason is not-owner', other?.reason === 'not-owner', JSON.stringify(other))
+check('someone else: names who is signed in and the owner', /signed in on https:\/\/media\.research\.private\.fish as Max, .*belongs to David Bovill/.test(other?.error || ''), other?.error)
+const broken = refused('https://media.research.private.fish', { app: { securityhandler: { isAuthorized: () => false, getUser: () => { throw new Error('no session') } } } })
+check('a module that cannot tell: the old wording', broken?.reason === 'no-rights' && /needs the rights to edit it/.test(broken?.error || ''), JSON.stringify(broken))
+check('signed in as the owner: allowed', refused('https://media.research.private.fish', { app: { securityhandler: { isAuthorized: () => true, getUser: () => ({ oauth2: { id: 'david' } }) } } }) === null)
+
 if (problems.length) {
   console.error('gate: FAILED\n  ' + problems.join('\n  '))
   process.exit(1)

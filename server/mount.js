@@ -372,7 +372,7 @@ const mountDeclaration = async ({ app, declaration, context = {} }) => {
             if (refusal) {
               return res
                 .status(refusal.status)
-                .json({ error: refusal.error, plugin: declaration.name, operation: operationId })
+                .json({ error: refusal.error, reason: refusal.reason, plugin: declaration.name, operation: operationId })
             }
           }
           const values = bodyParameters(operation).length && req.body && typeof req.body === 'object'

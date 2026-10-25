@@ -199,15 +199,59 @@ const refuseWrite = ({ app, req, origin, status, scope, gate = 'rights', spends 
     // same as everybody being allowed.
     return { status: 403, error: 'this farm has no security module, so it cannot tell who is asking' }
   }
-  if (!security.isAuthorized(req)) {
+  if (!security.isAuthorized(req)) return rightsRefusal(security, req, origin)
+  return null
+}
+
+// Who is asking, when the security module can say: '' when nobody is signed
+// in, a name when someone is, undefined when the module cannot tell.
+const signedInAs = (security, req) => {
+  if (typeof security.getUser !== 'function') return undefined
+  let user
+  try { user = security.getUser(req) } catch { return undefined }
+  if (!user) return ''
+  if (typeof user === 'string') return user
+  const id = Object.values(user).find(v => v && typeof v === 'object') || user
+  return String(id.displayName || id.name || id.username || id.id || 'someone')
+}
+const ownerOf = security => {
+  try { return typeof security.getOwner === 'function' ? String(security.getOwner() || '') : '' } catch { return '' }
+}
+
+// The refusal people meet most is not a missing right but a missing sign-in:
+// on a farm whose sign-in is per site, a new site starts signed out even when
+// every other tab is signed in. Say that first and plainly, so the fix is
+// obvious; keep the key route as an aside.
+const KEY_ASIDE = ' (Scripts and agents can present an X-Api-Key listed in the site\'s status/api-keys.json instead.)'
+const rightsRefusal = (security, req, origin) => {
+  const who = signedInAs(security, req)
+  const owner = ownerOf(security)
+  if (who === '') {
     return {
       status: 403,
+      reason: 'signed-out',
       error:
-        `changing a page on ${origin} needs the rights to edit it — sign in to this wiki as its owner, ` +
-        'or present an X-Api-Key listed in its status/api-keys.json',
+        `You are not signed in on ${origin}. Sign in there first — use the sign-in lock at the foot of the page — ` +
+        `then try again. This needs ${owner ? owner + '\'s' : 'the site owner\'s'} rights, and on some farms each site ` +
+        'has its own sign-in, so a new site starts signed out even when your other sites are signed in.' + KEY_ASIDE,
     }
   }
-  return null
+  if (who) {
+    return {
+      status: 403,
+      reason: 'not-owner',
+      error:
+        `You are signed in on ${origin} as ${who}, but this needs the rights to edit it` +
+        `${owner ? `, and it belongs to ${owner}` : ''}. Sign in as its owner to do this.` + KEY_ASIDE,
+    }
+  }
+  return {
+    status: 403,
+    reason: 'no-rights',
+    error:
+      `changing a page on ${origin} needs the rights to edit it — sign in to this wiki as its owner, ` +
+      'or present an X-Api-Key listed in its status/api-keys.json',
+  }
 }
 
 /**
