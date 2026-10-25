@@ -232,8 +232,7 @@ const rightsRefusal = (security, req, origin) => {
       reason: 'signed-out',
       error:
         `You are not signed in on ${origin}. Sign in there first — use the sign-in lock at the foot of the page — ` +
-        `then try again. This needs ${owner ? owner + '\'s' : 'the site owner\'s'} rights, and on some farms each site ` +
-        'has its own sign-in, so a new site starts signed out even when your other sites are signed in.' + KEY_ASIDE,
+        `then try again. This needs ${owner ? owner + '\'s' : 'the site owner\'s'} rights.` + KEY_ASIDE,
     }
   }
   if (who) {
