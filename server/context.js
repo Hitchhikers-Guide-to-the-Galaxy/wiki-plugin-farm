@@ -68,15 +68,33 @@ const CONTEXT_MEANING = {
  * asked at — that one is building a neighbourhood, which by definition is the
  * others, while this is a list of what exists.
  */
+// A site folder, or a symlink to one. A farm aliases a site under a second
+// name with a symlink (bot.pi5.private.fish -> bot.private.hitchhiker.institute
+// on the Pi5), and Dirent.isDirectory() is false for a symlink, so the alias
+// the browser actually uses was missing from every list this farm published
+// (0.10.5, 2026-11-13: the terminal service never trusted the alias, and every
+// Do Phase button on it drew as a plain script).
+const isSiteDir = (farmRoot, e) => {
+  if (e.isDirectory()) return true
+  if (!e.isSymbolicLink()) return false
+  try {
+    return fs.statSync(path.join(farmRoot, e.name)).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+const siteEntries = farmRoot =>
+  fs
+    .readdirSync(farmRoot, { withFileTypes: true })
+    .filter(e => isSiteDir(farmRoot, e))
+    .filter(e => fs.existsSync(path.join(farmRoot, e.name, 'pages')))
+    .map(e => e.name)
+
 const sitesOf = farmRoot => {
   if (!farmRoot) return []
   try {
-    return fs
-      .readdirSync(farmRoot, { withFileTypes: true })
-      .filter(e => e.isDirectory())
-      .filter(e => fs.existsSync(path.join(farmRoot, e.name, 'pages')))
-      .map(e => e.name)
-      .sort()
+    return siteEntries(farmRoot).sort()
   } catch {
     return []
   }
@@ -139,6 +157,7 @@ module.exports = {
   contextFor,
   unmetContext,
   sitesOf,
+  siteEntries,
   farmIdentity,
   contextVocabulary,
 }

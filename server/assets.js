@@ -12,6 +12,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { siteEntries } = require('./context.js')
 
 const MAX_NAME = 200
 
@@ -112,10 +113,7 @@ const farmSites = ({ owner, farmRoot }) => {
   const who = String(owner || '').trim()
   if (!OWNER_ID.test(who)) throw problem(400, 'owner must be a login id: letters, digits, . _ -')
   if (!farmRoot || !fs.existsSync(farmRoot)) return { owner: who, sites: [] }
-  const sites = fs
-    .readdirSync(farmRoot, { withFileTypes: true })
-    .filter(e => e.isDirectory() && fs.existsSync(path.join(farmRoot, e.name, 'pages')))
-    .map(e => e.name)
+  const sites = siteEntries(farmRoot)
     .filter(site => {
       const o = ownerOf(farmRoot, site)
       return !!o && (o.ids.has(who.toLowerCase()) || (o.ids.size === 0 && o.name.toLowerCase() === who.toLowerCase()))
